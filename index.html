@@ -94,6 +94,9 @@ function record(q, ok) {
   s.seen++;
   if (ok) { s.right++; s.streak++; if (s.streak >= 2) s.review = false; }
   else { s.streak = 0; s.review = true; }
+  const day = new Date().toLocaleDateString("sv-SE");
+  state.days = state.days || {};
+  state.days[day] = (state.days[day] || 0) + 1;
   save();
 }
 const reviewIds = () => QUESTIONS.filter(q => state.stats[q.id]?.review).map(q => q.id);
@@ -106,6 +109,52 @@ function shuffle(a) {
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const app = document.getElementById("app");
 const topics = [...new Set(QUESTIONS.map(q => q.topic))].sort();
+
+// ---------- WhatsApp report for Izak ----------
+const IZAK_WA = "27825528523";
+function topicScores() {
+  return topics.map(t => {
+    const st = QUESTIONS.filter(q => q.topic === t).map(q => state.stats[q.id]).filter(Boolean);
+    const seenN = st.reduce((a, s) => a + s.seen, 0), rightN = st.reduce((a, s) => a + s.right, 0);
+    return { t, seenN, pct: seenN ? Math.round(100 * rightN / seenN) : null };
+  }).filter(x => x.seenN >= 3).sort((a, b) => a.pct - b.pct);
+}
+function sendReport() {
+  const st = Object.values(state.stats);
+  const answered = st.reduce((a, s) => a + s.seen, 0);
+  const right = st.reduce((a, s) => a + s.right, 0);
+  const pct = answered ? Math.round(100 * right / answered) : 0;
+  const days = Object.keys(state.days || {}).sort();
+  const today = new Date().toLocaleDateString("sv-SE");
+  const lastDay = days[days.length - 1];
+  const ex = state.exams;
+  const best = ex.length ? Math.max(...ex.map(e => e.pct)) : null;
+  const ts = topicScores();
+  const verdict =
+    !answered ? "Hy het die app oopgemaak. Dis al. 🦗" :
+    answered < 30 ? "Hy't die swembad met een toon getoets. 🩴" :
+    pct < 50 ? "Die handboek is nog in die plastiek. 📦" :
+    pct < 70 ? "Op pad, maar die eksaminator lag nog. 😬" :
+    pct < 85 ? "Slaag-gebied! Moenie nou ophou nie. 🔥" :
+    "SAFEX-legende. Bestel al die feestaart. 🏆";
+  const lines = [
+    "📊 *SAFEX-RAPPORT: Renaldogg*",
+    "",
+    `Uitspraak: ${verdict}`,
+    "",
+    `🧠 Antwoorde gegee: ${answered} (${pct}% reg)`,
+    `📚 Vrae gesien: ${st.filter(s => s.seen).length} / ${QUESTIONS.length}`,
+    `🔁 Foute nog om reg te kry: ${reviewIds().length}`,
+    `⏱️ Eksamens geskryf: ${ex.length}${ex.length ? ` (beste ${best}%, laaste ${ex[ex.length - 1].pct}%)` : " 🐔"}`,
+    `📅 Dae geoefen: ${days.length}${lastDay ? (lastDay === today ? " (ook vandag ✅)" : ` (laaste keer ${lastDay} 👀)`) : ""}`,
+  ];
+  if (ts.length) {
+    lines.push(`💀 Swakste: ${ts[0].t} (${ts[0].pct}%)`);
+    if (ts.length > 1) lines.push(`💪 Sterkste: ${ts[ts.length - 1].t} (${ts[ts.length - 1].pct}%)`);
+  }
+  lines.push("", "_Outomaties gestuur deur SAFEX Oefen. Hy kan nie die syfers kul nie._ 😏");
+  window.open(`https://wa.me/${IZAK_WA}?text=${encodeURIComponent(lines.join("\n"))}`, "_blank");
+}
 
 // ---------- home ----------
 function home() {
@@ -137,8 +186,9 @@ function home() {
         <td>${esc(t)} <span class="muted">(${qs.length})</span></td>
         <td class="num ${pct === null ? "" : pct >= 70 ? "pass" : "fail"}">${pct === null ? "–" : pct + "%"}</td></tr>`;
     }).join("")}</table>
-    <p class="muted" style="margin-top:20px">Vordering bly op hierdie foon gestoor.
-      <button class="small" onclick="if(confirm('Vee alle vordering uit?')){state={stats:{},exams:[]};save();home()}">Begin oor</button></p>`;
+    <button style="margin-top:20px" onclick="sendReport()">📲 Stuur report vir Izak</button>
+    <p class="muted" style="margin-top:12px">Vordering bly op hierdie foon gestoor.
+      <button class="small" onclick="if(confirm('Vee alle vordering uit?')){state={stats:{},exams:[],days:{}};save();home()}">Begin oor</button></p>`;
 }
 
 // ---------- practice ----------
@@ -263,6 +313,7 @@ function finishExam() {
         ${Object.entries(q.options).map(([k, v]) => `<div class="opt ${k === q.answer ? "correct" : k === E.picks[id] ? "wrong" : ""}" style="padding:6px;border-radius:8px;border:1px solid transparent"><b>${k}</b> <span>${esc(v)}</span></div>`).join("")}
         <p class="muted">Jy: ${E.picks[id] || "niks"} · Reg: ${q.answer}</p>${feedbackHtml(q, false).replace(/<p><b>.*?<\/b><\/p>/, "")}</div>`;
     }).join("") || "<p>Geen foute nie! 🔥</p>"}
+    <button onclick="sendReport()">📲 Stuur report vir Izak</button>
     <button class="primary" onclick="home()">Terug tuis</button>`;
   window.scrollTo(0, 0);
 }
